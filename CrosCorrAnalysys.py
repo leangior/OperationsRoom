@@ -58,13 +58,21 @@ def shifted_series_by_best_lag(up_series : Union[pd.Series,pd.DataFrame], down_s
             Devuelve un dataframe con las series de aguas arriba desplazadas por su correspondiente lag óptimo 
     """
         X=pd.DataFrame()
-        for i in range(0,up_series.shape[1]):
+        
+        if up_series.size == up_series.shape[0]:
+            up_series=pd.DataFrame(up_series)
+            cols = 1
+        else:
+            cols = up_series.shape[1]
+
+        for i in range(0,cols):
             best_lag = get_response_time(up_series.iloc[:,i], down_serie, max_lag,ini) 
             if verbose == True :
                 print("Serie X"+str(i)+" Best Lag: "+str(best_lag)+" steps")    
             up_serie_shifted = up_series.iloc[:,i].shift(best_lag,freq)
             X = pd.concat([X,up_serie_shifted], axis=1)
-            X.index=pd.to_datetime(X.index)
+            
+        X.index=pd.to_datetime(X.index)
         
         return X
 

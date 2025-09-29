@@ -158,8 +158,29 @@ def execute_model(pred_serie : Union[pd.Series,pd.DataFrame], model : Union[pd.D
     return sim
 
 class SimpleMemoryModels():
+    """Clase Modelo de Memoria.  Incluye métodos para la calibración y ejecución de modelos - x_{n,j+h}=sum(l=0,L)sum(i=1,n)x_{i,j-l} -.   
+    Args:
+        preds :  
+            data frame con predictores para sitio de pronosticp
+        obs :  
+            data frame con observaciones de sitio de pronóstico  
+        periodicity : 
+            periodicidad de la serie, string ('daily','weekly' or 'monthly')
+        calib_period:
+            lista con los límites del periodo de calibración
+        lead_time:
+            int máximo tiempo de antelación
+        use_season:
+            bool indica si sólo se consideran las tuplas de valores de predictores y observaciones que corresponden al mismo trimestre del año que la fecha de pronóstico
+        verbose:
+            bool en caso de ser verdadero informa sobre métricas de ajuste al ejecutar los modelos
+        k:
+            float factor de escala para intervalos de confianza, expresado en sigmas 
 
-    def __init__(self,preds : pd.DataFrame, obs : pd.DataFrame, forecast_date : str = 'Now', periodicity : str = 'weekly',calib_period : List[str] = ['2013-07-01','2022-12-31'], lead_time : int = 4, k : float = 1.68, use_season : bool = True, exclude_years : List[str] = [], verbose : bool = True):
+    """ 
+
+
+    def __init__(self,preds : pd.DataFrame, obs : pd.DataFrame, forecast_date : str = 'Now', periodicity : str = 'weekly',calib_period : List[str] = ['2013-07-01','2022-12-31'], lead_time : int = 4, k : float = 1.68, use_season : bool = True, verbose : bool = True):
         
         self.preds = preds
         self.obs = obs

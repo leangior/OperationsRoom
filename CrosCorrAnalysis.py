@@ -158,7 +158,7 @@ def execute_model(pred_serie : Union[pd.Series,pd.DataFrame], model : Union[pd.D
     return sim
 
 class SimpleMemoryModels():
-    """Clase Modelo de Memoria.  Incluye métodos para la calibración y ejecución de modelos - x_{n,j+h}=sum(l=0,L)sum(i=1,n)x_{i,j-l} -.   
+    """Clase Modelo de Memoria.  Incluye métodos para la calibración y ejecución de modelos - x_{n,j+h}=sum(l=0,L)sum(i=1,n)a_{i,l}x_{i,j-l} -.   
     Args:
         preds :  
             data frame con predictores para sitio de pronosticp

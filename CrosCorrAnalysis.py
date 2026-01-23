@@ -78,9 +78,9 @@ def shifted_series_by_best_lag(up_series : Union[pd.Series,pd.DataFrame], down_s
         return X
 
 def get_lag_and_linear_fit(up_series : Union[pd.Series,pd.DataFrame], down_serie : Union[pd.Series,pd.DataFrame], max_lag : int =10,ini : int =1, verbose : bool = True) -> List:
-    """Evalúa la correlación cruzada entre una señal o conjunto de señales de aguas arriba (up_series) y una señal de aguas abajo (down_serie), determina el tiempo de traslado más adecuado para la hipótesis de asociación lineal em cada caso y devuelve el modelo lineal correspondiente (univariante/multivariante) y el dataframe de predictores - desplazados de acuerdo a sus correspondientes retardos óptimos-
+    """Evalúa la correlación cruzada entre una señal o conjunto de señales de aguas arriba (up_series) y una señal de aguas abajo (down_serie), determina el tiempo de traslado más adecuado para la hipótesis de asociación lineal en cada caso y devuelve el modelo lineal correspondiente (univariante/multivariante) y el dataframe de predictores - desplazados de acuerdo a sus correspondientes retardos óptimos-
     Args:
-        up_serie :  
+        up_series :  
             serie o series regularizada/s 'aguas arriba'
         down_serie :  
             serie regularizada 'aguas abajo' 
@@ -158,7 +158,7 @@ def execute_model(pred_serie : Union[pd.Series,pd.DataFrame], model : Union[pd.D
     return sim
 
 class SimpleMemoryModels():
-    """Clase Modelo de Memoria.  Incluye métodos para la calibración y ejecución de modelos - x_{n,j+h}=sum(l=0,L)sum(i=1,n)a_{i,l}x_{i,j-l} -.   
+    """Clase Modelo de Memoria.  Incluye métodos para la calibración y ejecución de modelos - x_{n,j+h}=sum(l=0,L)sum(i=1,n)x_{i,j-l} -.   
     Args:
         preds :  
             data frame con predictores para sitio de pronosticp
@@ -213,7 +213,7 @@ class SimpleMemoryModels():
 
         for horizon in range(0,self.leadtime):
 
-            self.sample = pd.concat([self.preds.loc[start:end],self.obs[start:end].shift(periods=-horizon-1)],axis=1)
+            self.sample = pd.concat([self.preds.loc[start:end],self.obs[start:end].shift(periods=-horizon-1)],axis=1).dropna()
 
             if self.season == True:
             

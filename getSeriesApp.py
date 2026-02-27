@@ -24,7 +24,7 @@ def getSerie(serieId : int,timeStart,timeEnd,aggStamp : str='D',configFile : str
     return(serie)
 
 #Get Series DF by Ids and Types
-def getSeriesDataFrame(seriesId : List[int],timeStart,timeEnd,aggStamp : str='D' ,configFile: str=CONFIG_FILE_PATH ,seriesTypes: List[str]=['puntual']) -> pd.DataFrame:
+def getSeriesDataFrame(seriesId : List[int],timeStart,timeEnd,aggStamp : str='D' ,configFile: str=CONFIG_FILE_PATH ,seriesTypes: List[str]=['puntual','puntual']) -> pd.DataFrame:
     if len(seriesId) != len (seriesTypes):
         raise ValueError("Series Id and SeriesType must have same length")
     service=loadConfig(configFile)

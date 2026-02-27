@@ -4,12 +4,15 @@ import statsmodels.api as sm
 import datetime
 from scipy import stats
 from statsmodels.tsa.seasonal import seasonal_decompose
-from scipy.stats import gamma
-from scipy.signal import find_peaks
-from sklearn.metrics import root_mean_squared_error
 from statsmodels.tsa.stattools import acf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.arima.model import ARIMAResults
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.stattools import kpss
+from scipy.stats import expon
+from scipy.stats import gamma
+from scipy.signal import find_peaks
+from sklearn.metrics import root_mean_squared_error
 from src.CrosCorrAnalysis import get_response_time
 from typing import Optional, Union, List, Tuple
 
@@ -395,7 +398,9 @@ def get_auto_arima_forecast(anom, method='monthly'):
     
     return forecast_df
 
-def peak_locator(serie : pd.DataFrame, lt_window : int =365, st_window = 30, z_threshold : float =1, value : float = None, centered : bool = True, min_sample_size : int = None, k_size : float = 2/3)-> pd.DataFrame:
+#--- Módulos para detección de picos, eventos y análisis de tiempos de traslado (requiere CrossCorrAnalysis.py)
+
+def peak_locator(serie : pd.DataFrame, lt_window : int =365, st_window = 30, z_threshold : float =1, value : float = None, centered : bool = True, min_sample_size : int = None, k_size : float = 2/3)-> pd.Series:
 
     "Given a time series object return peak time series, by standarized anomalies analysis"
     
@@ -412,6 +417,183 @@ def peak_locator(serie : pd.DataFrame, lt_window : int =365, st_window = 30, z_t
     peaks=serie.iloc[peak_index,0]
 
     return(peaks[peaks>=value])
+
+def peak_arrivals_distribution_stats(peak_series : pd.DataFrame,freq : str = 'D',pvalues_thresholds : List[float] = [0.05,0.05])->List[dict]:
+    "Compute Peak Arrival Distribution and estimate lambda (mean number of cases per unit time). Also, check stationarity (ADF and KPSS)."
+    if freq not in ['h','D']:
+        raise ValueError("Freq must be 'D' (from peak time sample obatined by analysis of daily data) or 'h' (hourly)")
+    elif freq == 'D':
+        factor=365.25
+    elif freq =='h':
+        factor=365.25*24
+        
+    
+    computed_lambdas=dict()
+
+    time_delta_distribution=peak_series.index.diff()
+    time_delta_distribution=(time_delta_distribution.dropna()/np.timedelta64(1,freq))
+
+    p_values=dict()
+    p_values['adfuller test']=adfuller(time_delta_distribution)[1]
+    p_values['kpss test']=kpss(time_delta_distribution)[1]
+
+    if p_values['adfuller test']<pvalues_thresholds[0]:
+        p_values['adf']='Stationary'
+    else:
+        p_values['adf']='Non Stationary'
+
+    if p_values['kpss test']>pvalues_thresholds[1]:
+        p_values['kpss']='Stationary'
+    else:
+        p_values['kpss']='Non Stationary'
+
+
+
+    computed_lambdas['SampleMean']=float(factor/pd.DataFrame(time_delta_distribution).mean().iloc[0])
+
+    exponential_fit_scale=expon.fit(time_delta_distribution,floc=0)[1]
+    computed_lambdas['ExpFit']=factor/exponential_fit_scale
+
+    sorted_values=np.sort(time_delta_distribution)
+    cumulative_values= np.arange(1,len(sorted_values)+1)/(len(sorted_values)+1)
+    empirical_distribution=pd.DataFrame([sorted_values,cumulative_values]).T
+    empirical_distribution.columns=['Time','Cumulative Frequency']
+    
+    X=sm.add_constant(sorted_values)
+    Y=np.log(1-cumulative_values)
+    m=sm.OLS(Y,X).fit()
+    computed_lambdas['LREmpDist']=float(-factor*m.params[1])
+
+    results=[{'Empirical Distribution':empirical_distribution},{'Computed Lambdas':computed_lambdas},{'Stationarity Tests p_values':p_values}]
+
+    return(results)
+
+def computeTr_by_PlottingPosition(x : np.ndarray, a_par : Union[int,float] = None, mean_lambda : Union[int,float]= 1):
+    
+    v=[]
+
+    if type(x) is not np.ndarray:
+        raise TypeError("x must be a 1D array")
+
+    if a_par is None:
+            a=0.44  #Grigorten 
+    elif type(a_par) is not float:
+        if type(a_par) is not int: 
+            raise TypeError("Must provide only plotting position unique parameter a (a_par : float/int), for computing original plotting position (i-a)/(N+1-2a). By default is assumed a=0.44 (Grigorten).")
+        else:
+            a=a_par
+    else:
+        a=a_par
+        
+    i=1
+    N=len(x)
+    x.sort()
+    for p in x:
+        survival_function_value=1-(i-a)/(N+1-2*a)
+        return_period=1/(mean_lambda*survival_function_value)
+        v.append([p,return_period])
+        i=i+1
+        
+    v=pd.DataFrame(v)
+    v.columns=['peak_value','return_period']
+    return(v)
+
+def computeTrDistribution(peaks_serie : Union[pd.Series,pd.DataFrame],a_par : Union[float,int] = None,method : str ='plotting position',pvalues_thresholds : List[float] = [0.05,0.05],confidence_intervals_sample_size : int=100):
+    
+    v=[]
+    
+    #computes mean lambda value
+    pad=peak_arrivals_distribution_stats(peaks_serie,pvalues_thresholds=pvalues_thresholds)
+    mean_lambda=np.array(list(pad[1]['Computed Lambdas'].values())).mean()
+
+    if pad[2]['Stationarity Tests p_values']['adf']=='Stationary' and pad[2]['Stationarity Tests p_values']['kpss']=='Stationary':
+        print("Stationarity tests passed (ADF & KPSS)")
+    elif pad[2]['Stationarity Tests p_values']['adf'] is not 'Stationary':
+        print("ADF tests failed")
+    else:
+        print("KPSS tests failed")
+
+    if method not in ['plotting position','pareto','extremes']:
+        raise ValueError("mehod must be 'plotting position','pareto' or 'extremes'") 
+    
+    #computes Tr by plotting position of peaks sample
+    if method == 'plotting position':
+        if a_par is None:
+            a=0.44  #Grigorten
+        elif type(a_par) is not float:
+            if type(a_par) is not int: 
+                raise TypeError("Must provide only plotting position unique parameter a (a_par : float/int), for computing original plotting position (i-a)/(N+1-2a). By default is assumed a=0.44 (Grigorten).")
+            else:
+                a=a_par
+        else:
+            a=a_par
+
+        i=1
+        N=len(peaks_serie)
+        for p in peaks_serie.sort_values():
+            survival_function_value=1-(i-a)/(N+1-2*a)
+            return_period=1/(mean_lambda*survival_function_value)
+            v.append([p,return_period])
+            i=i+1
+        
+        v=pd.DataFrame(v)
+        v.columns=['peak_value','return_period']
+        return(v)
+    
+    #computes Tr by genpareto or genextreme distribution fitting to peaks sample
+    elif method in ['pareto','extremes']:
+        if a_par is None:
+            if method == 'pareto':
+                shape, loc, scale = stats.genpareto.fit(peaks_serie.values)
+            elif method == 'extremes':
+                shape, loc, scale = stats.genextreme.fit(peaks_serie.values)
+        else:
+            if type(a_par) is not float or int:
+                raise Warning("Avoiding use of a_par (not neccesary with 'pareto' or 'extremes' option - distribution parameters are oibtained by fitting-). NEsidea a_par must be a single float type variable")
+            else:
+                raise Warning("Avoiding use of a_par (not neccesary with 'pareto' or 'extremes' option - distribution parameters are oibtained by fitting-)")
+    
+        for p in peaks_serie.sort_values():
+            if method == 'pareto':
+                return_period=1/(mean_lambda*stats.genpareto.sf(p,shape,loc,scale))
+            elif method == 'extremes':
+                return_period=1/(mean_lambda*stats.genextreme.sf(p,shape,loc,scale))
+            v.append([p,return_period])
+
+        v=pd.DataFrame(v)
+        v.columns=['peak_value','return_period']
+        return(v)
+
+
+
+def computeTr(x : float, serie : pd.DataFrame,freq : str = 'D', lt_window : int =365, st_window = 30, z_threshold : float =1, value : float = None, centered : bool = True, min_sample_size : int = None, k_size : float = 2/3,pvalues_thresholds=[0.05,0.05])->dict:
+
+
+    peaks = peak_locator(serie,lt_window,st_window,z_threshold,value,centered,min_sample_size,k_size)
+    etas = peak_arrivals_distribution_stats(peaks,freq,pvalues_thresholds)
+    
+    pars=dict()
+
+    mean_lambda = np.array(list(etas[1]['Computed Lambdas'].values())).mean()
+    pars['mean lambda']=mean_lambda
+    pars['adf']=etas[2]['Stationarity Tests p_values']['adf']
+    pars['kpss']=etas[2]['Stationarity Tests p_values']['kpss']
+
+    tr=dict()
+
+    shape, loc, scale = stats.genpareto.fit(peaks.values)
+    tr['genpareto return period'] = 1/(mean_lambda*stats.genpareto.sf(x,shape,loc,scale))
+    pars['genpareto scipy.pars']=shape,loc,scale
+
+    shape, loc, scale = stats.genextreme.fit(peaks.values)
+    tr['genxtremes return period'] = 1/(mean_lambda*stats.genextreme.sf(x,shape,loc,scale)) 
+    pars['genextreme scipy.pars']=shape,loc,scale
+
+    results=[{'value':x},{'computed Tr':tr},{'computed pars':pars},{'peaks serie':peaks}]
+
+    return(results)
+
+#Continuar, falta agregarle distribuciones, quizàs pensar en Bootstraping en pasos anteriores (estimacón robusta lambda) o inclusive aquì (estimación de Trs con bootstraping en fitting). Ver además si no conviene siempre devolver la empírica para contraste y tambièn el resultado de los test de estacionariedad para evaluar calidad de estimación
 
 def hydrograph_locator(serie : pd.DataFrame, lt_window : int =365, st_window = 30, z_threshold : float =1, value : float = None, centered : bool = True, min_sample_size : int = None, k_size : float = 2/3)-> dict:
 
